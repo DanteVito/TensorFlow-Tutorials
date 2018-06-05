@@ -21,6 +21,8 @@ import os
 import urllib.request
 import tarfile
 import zipfile
+import pydoop
+import hops.hdfs as hdfs
 
 ########################################################################
 
@@ -45,7 +47,7 @@ def _print_download_progress(count, block_size, total_size):
 ########################################################################
 
 
-def maybe_download_and_extract(url, download_dir):
+def maybe_download_and_extract(url):
     """
     Download and extract the data if it doesn't already exist.
     Assumes the url is a tar-ball file.
@@ -54,14 +56,11 @@ def maybe_download_and_extract(url, download_dir):
         Internet URL for the tar-file to download.
         Example: "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
 
-    :param download_dir:
-        Directory where the downloaded file is saved.
-        Example: "data/CIFAR-10/"
-
     :return:
         Nothing.
     """
 
+    download_dir = os.environ['PDIR']
     # Filename for saving the file downloaded from the internet.
     # Use the filename from the URL and add it to the download_dir.
     filename = url.split('/')[-1]
@@ -90,6 +89,8 @@ def maybe_download_and_extract(url, download_dir):
             # Unpack the tar-ball.
             tarfile.open(name=file_path, mode="r:gz").extractall(download_dir)
 
+        (name,ext) = os.path.splitext(file_path)            
+        pydoop.hdfs.put(name, hdfs.project_path() + "Resources")
         print("Done.")
     else:
         print("Data has apparently already been downloaded and unpacked.")

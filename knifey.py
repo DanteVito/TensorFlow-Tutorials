@@ -18,24 +18,25 @@
 #
 ########################################################################
 
-from dataset import load_cached
-import download
 import os
+import hops.hdfs as hdfs
+import pydoop.hdfs.path as hpath
+
 
 ########################################################################
 
 # Directory where you want to download and save the data-set.
 # Set this before you start calling any of the functions below.
-data_dir = "data/knifey-spoony/"
+data_dir = hdfs.project_path() + "Resources/knifey-spoony/"
 
 # Directory for the training-set after copying the files using copy_files().
-train_dir = os.path.join(data_dir, "train/")
+train_dir = data_dir + "/train"
 
 # Directory for the test-set after copying the files using copy_files().
-test_dir = os.path.join(data_dir, "test/")
+test_dir = data_dir + "/test"
 
 # URL for the data-set on the internet.
-data_url = "https://github.com/Hvass-Labs/knifey-spoony/raw/master/knifey-spoony.tar.gz"
+#data_url = "https://github.com/Hvass-Labs/knifey-spoony/raw/master/knifey-spoony.tar.gz"
 
 ########################################################################
 # Various constants for the size of the images.
@@ -57,75 +58,14 @@ img_size_flat = img_size * img_size * num_channels
 num_classes = 3
 
 ########################################################################
-# Public functions that you may call to download the data-set from
-# the internet and load the data into memory.
-
-
-def maybe_download_and_extract():
-    """
-    Download and extract the Knifey-Spoony data-set if it doesn't already exist
-    in data_dir (set this variable first to the desired directory).
-    """
-
-    download.maybe_download_and_extract(url=data_url, download_dir=data_dir)
-
-
-def load():
-    """
-    Load the Knifey-Spoony data-set into memory.
-
-    This uses a cache-file which is reloaded if it already exists,
-    otherwise the Knifey-Spoony data-set is created and saved to
-    the cache-file. The reason for using a cache-file is that it
-    ensure the files are ordered consistently each time the data-set
-    is loaded. This is important when the data-set is used in
-    combination with Transfer Learning as is done in Tutorial #09.
-
-    :return:
-        A DataSet-object for the Knifey-Spoony data-set.
-    """
-
-    # Path for the cache-file.
-    cache_path = os.path.join(data_dir, "knifey-spoony.pkl")
-
-    # If the DataSet-object already exists in a cache-file
-    # then load it, otherwise create a new object and save
-    # it to the cache-file so it can be loaded the next time.
-    dataset = load_cached(cache_path=cache_path,
-                          in_dir=data_dir)
-
-    return dataset
-
-
-def copy_files():
-    """
-    Copy all the files in the training-set to train_dir
-    and copy all the files in the test-set to test_dir.
-
-    This creates the directories if they don't already exist,
-    and it overwrites the images if they already exist.
-
-    The images are originally stored in a directory-structure
-    that is incompatible with e.g. the Keras API. This function
-    copies the files to a dir-structure that works with e.g. Keras.
-    """
-
-    # Load the Knifey-Spoony dataset.
-    # This is very fast as it only gathers lists of the files
-    # and does not actually load the images into memory.
-    dataset = load()
-
-    # Copy the files to separate training- and test-dirs.
-    dataset.copy_files(train_dir=train_dir, test_dir=test_dir)
-
-########################################################################
 
 if __name__ == '__main__':
     # Download and extract the data-set if it doesn't already exist.
     maybe_download_and_extract()
 
+    hdfs_path = hdfs.project_path() + "Resources/knifey-spoony"
     # Load the data-set.
-    dataset = load()
+    dataset = Dataset(hdfs_path)
 
     # Get the file-paths for the images and their associated class-numbers
     # and class-labels. This is for the training-set.

@@ -33,9 +33,21 @@
 import os
 import subprocess
 import argparse
-
+import hops.hdfs as hdfs
+import pydoop.hdfs.path as hpath
 ########################################################################
 
+
+def treewalker(root_info):
+    fs = hdfs.get()
+    if root_info["kind"] == "directory":
+        for path_spec in fs.list_directory(root_info["name"]):
+            yield path_spec
+            if path_spec["kind"] == "directory":
+                for item in treewalker(fs, path_spec):
+                    yield item
+    else:
+        yield root_info                
 
 def video2images(in_dir, out_dir, crop_size, out_size, framerate, video_exts):
     """
@@ -69,28 +81,30 @@ def video2images(in_dir, out_dir, crop_size, out_size, framerate, video_exts):
 
     # Convert all video extensions to lower-case.
     video_exts = tuple(ext.lower() for ext in video_exts)
-
+    fs = hdfs.get()
+    
     # Number of videos processed.
     video_count = 0
 
     # Process all the sub-dirs recursively.
-    for current_dir, dir_names, file_names in os.walk(in_dir):
+#    for current_dir, dir_names, file_names in os.walk(in_dir):
+    for current_dir, dir_names, file_names in treewalker(in_dir):        
         # The current dir relative to the input directory.
         relative_path = os.path.relpath(current_dir, in_dir)
 
         # Name of the new directory for the output images.
-        new_dir = os.path.join(out_dir, relative_path)
+        new_dir = hpath.join(out_dir, relative_path)
 
         # If the output-directory does not exist, then create it.
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
+        if not fs.exists(new_dir):
+            fs.mkdir(new_dir)
 
         # For all the files in the current directory.
         for file_name in file_names:
             # If the file has a valid video-extension. Compare lower-cases.
             if file_name.lower().endswith(video_exts):
                 # File-path for the input video.
-                in_file = os.path.join(current_dir, file_name)
+                in_file = current_dir + "/" + file_name
 
                 # Split the file-path in root and extension.
                 file_root, file_ext = os.path.splitext(file_name)
@@ -99,7 +113,7 @@ def video2images(in_dir, out_dir, crop_size, out_size, framerate, video_exts):
                 new_file_name = file_root + "-%4d.jpg"
 
                 # Complete file-path for the output images incl. all sub-dirs.
-                new_file_path = os.path.join(new_dir, new_file_name)
+                new_file_path = new_dir + "/" + new_file_name
 
                 # Clean up the path by removing e.g. "/./"
                 new_file_path = os.path.normpath(new_file_path)

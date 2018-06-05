@@ -20,8 +20,8 @@
 
 import numpy as np
 import os
-import shutil
-from cache import cache
+import hops.hdfs as hdfs
+import pydoop.hdfs.path as hpath
 
 ########################################################################
 
@@ -51,6 +51,43 @@ def one_hot_encoded(class_numbers, num_classes=None):
 
     return np.eye(num_classes, dtype=float)[class_numbers]
 
+
+def inodes_in_dir(hdfs_path, kind):
+    """
+    :param fs:
+        Pydoop hdfs objcet
+    
+    :param hdfs_path:
+        Full pathname as a string to a hdfs directory
+    
+    :param kind:
+        'file' or 'directory'
+        
+    :return:
+        List of either files or directories in the supplied hdfs_path
+    
+    """
+    fs = hdfs.get()
+    print("dirs in dir")
+    list_files=[]
+    if hpath.isdir(hdfs_path):
+        for path_spec in fs.list_directory(hdfs_path):
+            if path_spec["kind"] == kind:
+                filename=path_spec['name']
+                if filename.lower().endswith(".jpg"):
+                    list_files.append(filename)
+    else:
+        print("Was not a directory: " + hdfs_path)  
+    fs.close()
+    return list_files
+    
+def files_in_dir(hdfs_path):
+    print("files in dir")
+    return inodes_in_dir(hdfs_path, 'file')
+
+def dirs_in_dir(hdfs_path):
+    print("dirs in dir")
+    return inodes_in_dir(hdfs_path, 'directory')
 
 ########################################################################
 
@@ -106,7 +143,7 @@ class DataSet:
         """
 
         # Extend the input directory to the full path.
-        in_dir = os.path.abspath(in_dir)
+        #in_dir = os.path.abspath(in_dir)
 
         # Input directory.
         self.in_dir = in_dir
@@ -132,20 +169,25 @@ class DataSet:
         # Total number of classes in the data-set.
         self.num_classes = 0
 
-        # For all files/dirs in the input directory.
-        for name in os.listdir(in_dir):
-            # Full path for the file / dir.
-            current_dir = os.path.join(in_dir, name)
+        # Pydoop HDFS Clients from hops
+        self.fs = hdfs.get()
+        self.dfs = hdfs.get_fs()
 
+        # For all files/dirs in the input directory.
+        for name in self.fs.list_directory(in_dir):
+            fullpath=name['name']
+            dirname=hpath.dirname(fullpath)
             # If it is a directory.
-            if os.path.isdir(current_dir):
+            if hpath.isdir(fullpath):
                 # Add the dir-name to the list of class-names.
-                self.class_names.append(name)
+                self.class_names.append(hpath.basename(fullpath))
 
                 # Training-set.
 
                 # Get all the valid filenames in the dir (not sub-dirs).
-                filenames = self._get_filenames(current_dir)
+                #filenames = self._get_filenames(current_dir)
+                print(fullpath)
+                filenames = files_in_dir(fullpath)
 
                 # Append them to the list of all filenames for the training-set.
                 self.filenames.extend(filenames)
@@ -162,8 +204,10 @@ class DataSet:
                 # Test-set.
 
                 # Get all the valid filenames in the sub-dir named 'test'.
-                filenames_test = self._get_filenames(os.path.join(current_dir, 'test'))
+#                filenames_test = self._get_filenames(os.path.join(current_dir, 'test'))
+                filenames_test = files_in_dir(fullpath + "/test")
 
+                
                 # Append them to the list of all filenames for the test-set.
                 self.filenames_test.extend(filenames_test)
 
@@ -176,29 +220,9 @@ class DataSet:
                 # Increase the total number of classes in the data-set.
                 self.num_classes += 1
 
-    def _get_filenames(self, dir):
-        """
-        Create and return a list of filenames with matching extensions in the given directory.
 
-        :param dir:
-            Directory to scan for files. Sub-dirs are not scanned.
 
-        :return:
-            List of filenames. Only filenames. Does not include the directory.
-        """
-
-        # Initialize empty list.
-        filenames = []
-
-        # If the directory exists.
-        if os.path.exists(dir):
-            # Get all the filenames with matching extensions.
-            for filename in os.listdir(dir):
-                if filename.lower().endswith(self.exts):
-                    filenames.append(filename)
-
-        return filenames
-
+                
     def get_paths(self, test=False):
         """
         Get the full paths for the files in the data-set.
@@ -227,7 +251,7 @@ class DataSet:
 
         for filename, cls in zip(filenames, class_numbers):
             # Full path-name for the file.
-            path = os.path.join(self.in_dir, self.class_names[cls], test_dir, filename)
+            path = hpath.join(self.in_dir, self.class_names[cls], test_dir, filename)
 
             yield path
 
@@ -255,111 +279,6 @@ class DataSet:
                one_hot_encoded(class_numbers=self.class_numbers_test,
                                num_classes=self.num_classes)
 
-    def copy_files(self, train_dir, test_dir):
-        """
-        Copy all the files in the training-set to train_dir
-        and copy all the files in the test-set to test_dir.
+#dataset = DataSet(in_dir="hdfs:///Projects/demo_tensorflow_admin000/Resources/knifey-spoony")
+#dataset.get_training_set()
 
-        For example, the normal directory structure for the
-        different classes in the training-set is:
-
-        knifey-spoony/forky/
-        knifey-spoony/knifey/
-        knifey-spoony/spoony/
-
-        Normally the test-set is a sub-dir of the training-set:
-
-        knifey-spoony/forky/test/
-        knifey-spoony/knifey/test/
-        knifey-spoony/spoony/test/
-
-        But some APIs use another dir-structure for the training-set:
-        
-        knifey-spoony/train/forky/
-        knifey-spoony/train/knifey/
-        knifey-spoony/train/spoony/
-
-        and for the test-set:
-        
-        knifey-spoony/test/forky/
-        knifey-spoony/test/knifey/
-        knifey-spoony/test/spoony/
-
-        :param train_dir: Directory for the training-set e.g. 'knifey-spoony/train/'
-        :param test_dir: Directory for the test-set e.g. 'knifey-spoony/test/'
-        :return: Nothing. 
-        """
-
-        # Helper-function for actually copying the files.
-        def _copy_files(src_paths, dst_dir, class_numbers):
-
-            # Create a list of dirs for each class, e.g.:
-            # ['knifey-spoony/test/forky/',
-            #  'knifey-spoony/test/knifey/',
-            #  'knifey-spoony/test/spoony/']
-            class_dirs = [os.path.join(dst_dir, class_name + "/")
-                          for class_name in self.class_names]
-
-            # Check if each class-directory exists, otherwise create it.
-            for dir in class_dirs:
-                if not os.path.exists(dir):
-                    os.makedirs(dir)
-
-            # For all the file-paths and associated class-numbers,
-            # copy the file to the destination dir for that class.
-            for src, cls in zip(src_paths, class_numbers):
-                shutil.copy(src=src, dst=class_dirs[cls])
-
-        # Copy the files for the training-set.
-        _copy_files(src_paths=self.get_paths(test=False),
-                    dst_dir=train_dir,
-                    class_numbers=self.class_numbers)
-
-        print("- Copied training-set to:", train_dir)
-
-        # Copy the files for the test-set.
-        _copy_files(src_paths=self.get_paths(test=True),
-                    dst_dir=test_dir,
-                    class_numbers=self.class_numbers_test)
-
-        print("- Copied test-set to:", test_dir)
-
-
-########################################################################
-
-
-def load_cached(cache_path, in_dir):
-    """
-    Wrapper-function for creating a DataSet-object, which will be
-    loaded from a cache-file if it already exists, otherwise a new
-    object will be created and saved to the cache-file.
-
-    This is useful if you need to ensure the ordering of the
-    filenames is consistent every time you load the data-set,
-    for example if you use the DataSet-object in combination
-    with Transfer Values saved to another cache-file, see e.g.
-    Tutorial #09 for an example of this.
-
-    :param cache_path:
-        File-path for the cache-file.
-
-    :param in_dir:
-        Root-dir for the files in the data-set.
-        This is an argument for the DataSet-init function.
-
-    :return:
-        The DataSet-object.
-    """
-
-    print("Creating dataset from the files in: " + in_dir)
-
-    # If the object-instance for DataSet(in_dir=data_dir) already
-    # exists in the cache-file then reload it, otherwise create
-    # an object instance and save it to the cache-file for next time.
-    dataset = cache(cache_path=cache_path,
-                    fn=DataSet, in_dir=in_dir)
-
-    return dataset
-
-
-########################################################################
